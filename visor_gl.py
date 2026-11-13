@@ -4,7 +4,7 @@ Visor 3D: un widget de PyQt5 donde OpenGL dibuja la escena.
 QOpenGLWidget nos da tres funciones que Qt llama solo:
   initializeGL() -> una vez al inicio (luces, profundidad, colores)
   resizeGL()     -> cuando cambia el tamaño de la ventana (perspectiva)
-  paintGL()      -> cada vez que hay que redibujar (cámara + robot)
+  paintGL()      -> cada vez que hay que redibujar (cámara + muñeco)
 Es lo mismo que glutDisplayFunc / glutReshapeFunc de la guía,
 pero dentro de una interfaz de PyQt.
 """
@@ -15,12 +15,12 @@ from PyQt5.QtWidgets import QOpenGLWidget
 from OpenGL.GL import *
 from OpenGL.GLU import gluPerspective, gluLookAt
 
-import robot
+import muneco
 
 # Valores iniciales de cámara y modelo (los usa HOME CÁMARA)
-CAMARA_INICIAL = {"azimut": 45.0, "elevacion": 25.0, "distancia": 1600.0}
+CAMARA_INICIAL = {"azimut": -60.0, "elevacion": 20.0, "distancia": 330.0}
 MODELO_INICIAL = {"tx": 0.0, "ty": 0.0, "tz": 0.0, "rx": 0.0, "ry": 0.0, "rz": 0.0}
-OBJETIVO = (0.0, 0.0, 350.0)   # punto al que mira la cámara (mitad del robot)
+OBJETIVO = (0.0, 0.0, 62.0)    # punto al que mira la cámara (mitad del muñeco)
 
 
 class VisorGL(QOpenGLWidget):
@@ -64,7 +64,7 @@ class VisorGL(QOpenGLWidget):
 
     def _dibujar_pieza(self, nombre):
         if nombre in self.listas:
-            glColor3f(*robot.COLORES.get(nombre, (0.7, 0.7, 0.7)))
+            glColor3f(*muneco.PIEZAS[nombre].color)
             glCallList(self.listas[nombre])
 
     # ---------- OpenGL ----------
@@ -89,13 +89,13 @@ class VisorGL(QOpenGLWidget):
         glViewport(0, 0, w, max(h, 1))
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
-        gluPerspective(45.0, w / max(h, 1), 10.0, 20000.0)
+        gluPerspective(45.0, w / max(h, 1), 1.0, 5000.0)
         glMatrixMode(GL_MODELVIEW)
 
     def _posicion_camara(self):
         """Coordenadas esféricas -> posición (x, y, z) de la cámara.
 
-        Como una persona caminando alrededor del robot:
+        Como una persona caminando alrededor del muñeco:
         azimut = hacia qué lado está parada, elevación = qué tan alto mira,
         distancia = qué tan lejos está.
         """
@@ -132,8 +132,8 @@ class VisorGL(QOpenGLWidget):
         glRotatef(m["rx"], 1, 0, 0)
         glRotatef(m["ry"], 0, 1, 0)
         glRotatef(m["rz"], 0, 0, 1)
-        self._dibujar_ejes(150)
-        robot.dibujar_robot(self.articulaciones, self._dibujar_pieza)
+        self._dibujar_ejes(40)
+        muneco.dibujar_muneco(self.articulaciones, self._dibujar_pieza)
         glPopMatrix()
 
     def _dibujar_piso(self):
@@ -141,7 +141,7 @@ class VisorGL(QOpenGLWidget):
         glLineWidth(1.0)
         glColor3f(0.78, 0.80, 0.84)
         glBegin(GL_LINES)
-        paso, tam = 100, 1000
+        paso, tam = 10, 150
         for i in range(-tam, tam + 1, paso):
             glVertex3f(i, -tam, 0); glVertex3f(i, tam, 0)
             glVertex3f(-tam, i, 0); glVertex3f(tam, i, 0)
@@ -175,7 +175,7 @@ class VisorGL(QOpenGLWidget):
         self.camara_cambiada.emit()
 
     # ---------- mouse ----------
-    # Arrastrar con clic izquierdo: girar alrededor del robot
+    # Arrastrar con clic izquierdo: girar alrededor del muñeco
     # Rueda: acercar / alejar
     def mousePressEvent(self, e):
         self._mouse_ant = e.pos()
@@ -197,6 +197,6 @@ class VisorGL(QOpenGLWidget):
 
     def wheelEvent(self, e):
         factor = 0.9 if e.angleDelta().y() > 0 else 1.1
-        self.camara["distancia"] = max(300.0, min(5000.0, self.camara["distancia"] * factor))
+        self.camara["distancia"] = max(80.0, min(1500.0, self.camara["distancia"] * factor))
         self.update()
         self.camara_cambiada.emit()

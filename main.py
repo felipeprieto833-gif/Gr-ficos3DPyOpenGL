@@ -2,7 +2,7 @@
 Laboratorio 6 - Gráficos en 3D con PyOpenGL
 Programación 3 - Ingeniería Mecatrónica - UMNG
 
-Simulador de un brazo robótico de 6 articulaciones.
+Simulador de un muñeco LEGO de 9 articulaciones (piezas hechas en SolidWorks).
 Ejecutar:  python main.py
 """
 import math
@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout,
                              QPushButton, QListWidget, QFileDialog, QScrollArea,
                              QMessageBox)
 
-import robot
+import muneco
 from stl_loader import cargar_stl
 from visor_gl import VisorGL, CAMARA_INICIAL, MODELO_INICIAL
 
@@ -79,10 +79,10 @@ class FilaSlider(QWidget):
 class VentanaPrincipal(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Lab 6 - Brazo robótico 6 GDL (PyOpenGL)")
+        self.setWindowTitle("Lab 6 - Muñeco LEGO articulado (PyOpenGL)")
         self.resize(1350, 820)
 
-        self.articulaciones = robot.crear_articulaciones()
+        self.articulaciones = muneco.crear_articulaciones()
         self.visor = VisorGL(self.articulaciones)
         self.visor.camara_cambiada.connect(self._sincronizar_camara)
 
@@ -173,7 +173,7 @@ class VentanaPrincipal(QMainWindow):
         c = CAMARA_INICIAL
         self.f_az = FilaSlider("Azimut", -180, 180, c["azimut"], "°")
         self.f_el = FilaSlider("Elevación", -89, 89, c["elevacion"], "°")
-        self.f_dist = FilaSlider("Distancia", 300, 5000, c["distancia"], " mm")
+        self.f_dist = FilaSlider("Distancia", 80, 1500, c["distancia"], " mm")
         for fila, clave in ((self.f_az, "azimut"), (self.f_el, "elevacion"),
                             (self.f_dist, "distancia")):
             fila.valor_cambiado.connect(lambda v, k=clave: self._mover_camara(k, v))
@@ -182,8 +182,8 @@ class VentanaPrincipal(QMainWindow):
         vistas = QGridLayout()
         for i, (texto, az, el) in enumerate((("Superior", -90, 89),
                                              ("Isométrica", 45, 35.26),
-                                             ("Lateral", -90, 0),
-                                             ("Frontal", 0, 0))):
+                                             ("Lateral", 0, 0),
+                                             ("Frontal", -90, 0))):
             b = QPushButton(texto)
             b.clicked.connect(lambda _, a=az, e=el: self.visor.poner_vista(a, e))
             vistas.addWidget(b, i // 2, i % 2)
@@ -208,9 +208,9 @@ class VentanaPrincipal(QMainWindow):
         grupo = QGroupBox("Posición y rotación del modelo")
         caja = QVBoxLayout(grupo)
         self.filas_modelo = {}
-        for clave, nombre, mn, mx, u in (("tx", "Mover X", -800, 800, " mm"),
-                                         ("ty", "Mover Y", -800, 800, " mm"),
-                                         ("tz", "Mover Z", -500, 500, " mm"),
+        for clave, nombre, mn, mx, u in (("tx", "Mover X", -150, 150, " mm"),
+                                         ("ty", "Mover Y", -150, 150, " mm"),
+                                         ("tz", "Mover Z", -100, 100, " mm"),
                                          ("rx", "Rotar X", -180, 180, "°"),
                                          ("ry", "Rotar Y", -180, 180, "°"),
                                          ("rz", "Rotar Z", -180, 180, "°")):
@@ -243,8 +243,8 @@ class VentanaPrincipal(QMainWindow):
     def cargar_todas_las_piezas(self):
         """Importa las piezas una por una (punto 2 de la guía)."""
         self.lista_piezas.clear()
-        for nombre, archivo in robot.ARCHIVOS.items():
-            self._cargar_pieza(nombre, CARPETA_PIEZAS / archivo)
+        for nombre, pieza in muneco.PIEZAS.items():
+            self._cargar_pieza(nombre, CARPETA_PIEZAS / pieza.archivo)
 
     def _cargar_pieza(self, nombre, ruta, fila=None):
         try:
@@ -264,7 +264,7 @@ class VentanaPrincipal(QMainWindow):
         if fila < 0:
             QMessageBox.information(self, "Piezas", "Selecciona primero una pieza de la lista.")
             return
-        nombre = list(robot.ARCHIVOS)[fila]
+        nombre = list(muneco.PIEZAS)[fila]
         ruta, _ = QFileDialog.getOpenFileName(self, f"STL para '{nombre}'",
                                               str(CARPETA_PIEZAS), "STL (*.stl)")
         if ruta:
