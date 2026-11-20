@@ -1,227 +1,166 @@
-"""
-Muñeco LEGO: piezas, ensamble y articulaciones.
+# muneco.py
+# Aca estan los datos del muñeco LEGO y la funcion que lo dibuja.
+# Las medidas estan en mm y son las del ensamble LEGO.SLDASM de SolidWorks.
 
-Todas las medidas están en milímetros y en el MISMO sistema de
-coordenadas del ensamble LEGO.SLDASM de SolidWorks (allá el eje Y
-es "arriba"). Así los números se pueden comparar con el CAD.
-
-IDEA CLAVE (ensamble jerárquico):
-Piensa en un muñeco de verdad. Si giras el brazo, la mano se va con
-él; si giras la cadera, se van las piernas. En OpenGL eso se logra
-dibujando cada pieza DENTRO de la transformación de su "padre":
-
-    cadera (la raíz: es lo que queda quieto sobre las piernas)
-     ├─ pierna derecha   (J6)
-     ├─ pierna izquierda (J7)
-     └─ torso            (J8 gira en la cintura)
-          ├─ cabeza          (J1 cuello)
-          │    └─ gorra (fija a la cabeza)
-          │         └─ hélice     (J9 gira sobre el botón de la gorra)
-          ├─ brazo derecho   (J2 hombro)
-          │    └─ mano derecha    (J4 muñeca)
-          └─ brazo izquierdo (J3 hombro)
-               └─ mano izquierda  (J5 muñeca)
-
-Como cada transformación se acumula sobre la del padre, el ensamble
-nunca se rompe (punto 5 de la guía).
-"""
 import math
-from dataclasses import dataclass, field
-from OpenGL.GL import (glPushMatrix, glPopMatrix, glTranslatef, glRotatef,
-                       glBegin, glEnd, glVertex3f, glNormal3f, glColor3f,
-                       GL_TRIANGLE_FAN, GL_TRIANGLE_STRIP)
+from OpenGL.GL import *
 
+# colores (R, G, B)
+ROJO = (0.8, 0.1, 0.1)
+AMARILLO = (0.98, 0.8, 0.1)
+AZUL = (0.1, 0.3, 0.7)
+VERDE = (0.1, 0.6, 0.25)
 
-@dataclass
-class Pieza:
-    archivo: str      # STL dentro de la carpeta piezas/
-    posicion: tuple   # dónde quedó la pieza en el ensamble (mm)
-    rotacion: tuple   # giros en X, Y, Z (grados) que tiene en el ensamble
-    color: tuple      # (R, G, B) entre 0 y 1
-
-
-ROJO = (0.80, 0.10, 0.10)
-AMARILLO = (0.98, 0.80, 0.10)
-AZUL = (0.10, 0.30, 0.70)
-VERDE = (0.10, 0.60, 0.25)
-
-# Posición y rotación de cada pieza, tomadas del ensamble LEGO.SLDASM
-PIEZAS = {
-    "torso":       Pieza("TORZO.stl",            (-1.16,  -3.01, 1011.70), (0, 0, 0),                ROJO),
-    "cabeza":      Pieza("Cabeza_lego.stl",      (-1.16,  32.69, 1011.70), (0, 26.10, 0),            AMARILLO),
-    "brazo_der":   Pieza("BRAZO_DERECHO.stl",    (-25.05,  2.75, 1019.32), (-43.17, 5.49, -5.83),    ROJO),
-    "brazo_izq":   Pieza("BRAZO_IZQUIERDO.stl",  (23.74,  -1.80, 1013.59), (-11.70, -1.41, 6.78),    ROJO),
-    "mano_der":    Pieza("MANOS.stl",            (-26.08, -0.28, 1042.98), (72.05, 26.12, -173.36),  AMARILLO),
-    "mano_izq":    Pieza("MANOS.stl",            (25.60, -17.33, 1033.32), (-46.69, -3.37, 4.33),    AMARILLO),
-    "cadera":      Pieza("CADERA.stl",           (-1.16, -29.03, 1011.70), (0, 0, 0),                AZUL),
-    "pierna_der":  Pieza("PIERNA_DERECHA.stl",   (-12.28, -50.09, 1016.36), (-20.44, 0, 0),          AZUL),
-    "pierna_izq":  Pieza("PIERNA_IZQUIERDA.stl", (10.99, -50.48, 1008.24), (15.00, 0, 0),            AZUL),
-    # Gorra con hélice, provisionales (herramientas/generar_gorra_helice.py).
-    # Gorra: su origen es el centro del borde de abajo, 7 mm arriba del centro
-    # de la cabeza. Hélice: su origen es la base del eje, sobre el botón (14,5 mm más arriba).
-    "gorra":       Pieza("GORRA.stl",            (-1.16,  39.69, 1011.70), (0, 0, 0),                AZUL),
-    "helice":      Pieza("HELICE.stl",           (-1.16,  54.19, 1011.70), (0, 0, 0),                VERDE),
+# cada pieza: [archivo stl, posicion en el ensamble, rotacion (x, y, z), color]
+piezas = {
+    "cadera":     ["CADERA.stl",           (-1.16, -29.03, 1011.70),  (0, 0, 0),               AZUL],
+    "pierna_der": ["PIERNA_DERECHA.stl",   (-12.28, -50.09, 1016.36), (-20.44, 0, 0),          AZUL],
+    "pierna_izq": ["PIERNA_IZQUIERDA.stl", (10.99, -50.48, 1008.24),  (15.00, 0, 0),           AZUL],
+    "torso":      ["TORZO.stl",            (-1.16, -3.01, 1011.70),   (0, 0, 0),               ROJO],
+    "cabeza":     ["Cabeza_lego.stl",      (-1.16, 32.69, 1011.70),   (0, 26.10, 0),           AMARILLO],
+    "gorra":      ["GORRA.stl",            (-1.16, 39.69, 1011.70),   (0, 0, 0),               AZUL],
+    "helice":     ["HELICE.stl",           (-1.16, 54.19, 1011.70),   (0, 0, 0),               VERDE],
+    "brazo_der":  ["BRAZO_DERECHO.stl",    (-25.05, 2.75, 1019.32),   (-43.17, 5.49, -5.83),   ROJO],
+    "brazo_izq":  ["BRAZO_IZQUIERDO.stl",  (23.74, -1.80, 1013.59),   (-11.70, -1.41, 6.78),   ROJO],
+    "mano_der":   ["MANOS.stl",            (-26.08, -0.28, 1042.98),  (72.05, 26.12, -173.36), AMARILLO],
+    "mano_izq":   ["MANOS.stl",            (25.60, -17.33, 1033.32),  (-46.69, -3.37, 4.33),   AMARILLO],
 }
 
-# Quién cuelga de quién (el árbol del dibujo de arriba)
-HIJOS = {
-    "cadera":    ["pierna_der", "pierna_izq", "torso"],
-    "torso":     ["cabeza", "brazo_der", "brazo_izq"],
-    "cabeza":    ["gorra"],
-    "gorra":     ["helice"],
-    "brazo_der": ["mano_der"],
-    "brazo_izq": ["mano_izq"],
-}
-RAIZ = "cadera"
+# articulaciones: [nombre, pivote (punto por donde gira), eje de giro, minimo, maximo]
+# el pivote lo saque de los pines y agujeros de cada pieza
+articulaciones = [
+    ["J1 Cuello",     (-1.16, 17.69, 1011.70),   (0, 1, 0),                -90, 90],
+    ["J2 Hombro der", (-15.79, 6.12, 1011.70),   (0.990, -0.139, 0),       -180, 180],
+    ["J3 Hombro izq", (14.02, 6.14, 1011.70),    (0.993, 0.120, 0),        -180, 180],
+    ["J4 Muñeca der", (-25.99, -0.84, 1035.86),  (0.104, -0.258, -0.961),  -180, 180],
+    ["J5 Muñeca izq", (25.16, -13.62, 1027.22),  (-0.075, 0.681, -0.729),  -180, 180],
+    ["J6 Pierna der", (-12.28, -37.58, 1011.70), (1, 0, 0),                -70, 90],
+    ["J7 Pierna izq", (10.99, -37.58, 1011.70),  (1, 0, 0),                -90, 70],
+    ["J8 Cintura",    (-1.16, -21.91, 1011.70),  (0, 1, 0),                -50, 50],
+    ["J9 Helice",     (-1.16, 54.19, 1011.70),   (0, 1, 0),                -180, 180],
+]
 
-# Para centrar el muñeco: los pies quedan en el piso y el torso en el centro
-CENTRO_ENSAMBLE = (-1.16, -74.70, 1011.70)
+# angulo actual de cada articulacion (en HOME todos son 0)
+angulos = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-
-@dataclass
-class Articulacion:
-    nombre: str
-    pieza: str      # la pieza que mueve (y con ella, todos sus hijos)
-    pivote: tuple   # punto por donde pasa el eje de giro (pin o agujero), en mm
-    eje: tuple      # dirección del eje de giro (o de avance, si es "tras")
-    minimo: float
-    maximo: float
-    inicial: float  # posición HOME (0 = la pose del ensamble de SolidWorks)
-    tipo: str = "rot"   # "rot" = gira (grados), "tras" = se desliza (mm)
-    valor: float = field(default=None)
-
-    def __post_init__(self):
-        if self.valor is None:
-            self.valor = self.inicial
-
-    @property
-    def unidad(self):
-        return "°" if self.tipo == "rot" else " mm"
+# aca main.py guarda las display lists de cada pieza
+listas = {}
 
 
-def crear_articulaciones():
-    """Las 9 articulaciones. Pivotes y ejes medidos sobre los pines de cada pieza.
-
-    Una pieza puede tener varias: se aplican en el orden de esta lista,
-    cada una dentro de la anterior.
-    """
-    return [
-        Articulacion("J1 Cuello",      "cabeza",     (-1.16, 17.69, 1011.70),  (0, 1, 0),              -90, 90, 0),
-        Articulacion("J2 Hombro der",  "brazo_der",  (-15.79, 6.12, 1011.70),  (0.990, -0.139, 0),     -180, 180, 0),
-        Articulacion("J3 Hombro izq",  "brazo_izq",  (14.02, 6.14, 1011.70),   (0.993, 0.120, 0),      -180, 180, 0),
-        Articulacion("J4 Muñeca der",  "mano_der",   (-25.99, -0.84, 1035.86), (0.104, -0.258, -0.961), -180, 180, 0),
-        Articulacion("J5 Muñeca izq",  "mano_izq",   (25.16, -13.62, 1027.22), (-0.075, 0.681, -0.729), -180, 180, 0),
-        Articulacion("J6 Pierna der",  "pierna_der", (-12.28, -37.58, 1011.70), (1, 0, 0),             -70, 90, 0),
-        Articulacion("J7 Pierna izq",  "pierna_izq", (10.99, -37.58, 1011.70),  (1, 0, 0),             -90, 70, 0),
-        Articulacion("J8 Cintura",     "torso",      (-1.16, -21.91, 1011.70), (0, 1, 0),              -50, 50, 0),
-        Articulacion("J9 Hélice",      "helice",     (-1.16, 54.19, 1011.70),  (0, 1, 0),              -180, 180, 0),
-    ]
+def girar(i):
+    # para que gire en el pivote y no en el origen:
+    # muevo el pivote al origen, giro y lo devuelvo
+    pivote = articulaciones[i][1]
+    eje = articulaciones[i][2]
+    glTranslatef(pivote[0], pivote[1], pivote[2])
+    glRotatef(angulos[i], eje[0], eje[1], eje[2])
+    glTranslatef(-pivote[0], -pivote[1], -pivote[2])
 
 
-# ---------------- Cara pintada sobre la cabeza ----------------
-# La cabeza es un cilindro de eje Y. La cara se dibuja "envuelta" sobre él:
-# cada punto se da como (s, y), donde s es la distancia medida sobre la
-# curva (mm, 0 = justo al frente) e y es la altura respecto al centro.
-RADIO_CABEZA = 15.22
-NEGRO = (0.05, 0.05, 0.05)
-BLANCO = (1.0, 1.0, 1.0)
+def poner_pieza(nombre):
+    # pone la pieza en su sitio del ensamble y la dibuja
+    archivo, pos, rot, color = piezas[nombre]
+    glPushMatrix()
+    glTranslatef(pos[0], pos[1], pos[2])
+    glRotatef(rot[0], 1, 0, 0)
+    glRotatef(rot[1], 0, 1, 0)
+    glRotatef(rot[2], 0, 0, 1)
+    glColor3f(color[0], color[1], color[2])
+    if nombre in listas:
+        glCallList(listas[nombre])
+    glPopMatrix()
 
 
-def _punto_cara(s, y, separacion):
-    """Manda un vértice (y su normal) sobre el cilindro de la cabeza.
+# ----- cara -----
+# la cabeza es un cilindro de radio 15.22, entonces cada punto de la cara
+# lo pongo encima de la superficie del cilindro
+RADIO = 15.22
 
-    `separacion` lo despega un poquito de la superficie para que no
-    "parpadee" con el amarillo de la cabeza (z-fighting).
-    """
-    angulo = s / RADIO_CABEZA
-    nx, nz = math.sin(angulo), math.cos(angulo)
-    r = RADIO_CABEZA + separacion
-    glNormal3f(nx, 0.0, nz)
-    glVertex3f(r * nx, y, r * nz)
-
-
-def _ovalo(cs, cy, ancho, alto, separacion=0.15, pasos=24):
-    glBegin(GL_TRIANGLE_FAN)
-    _punto_cara(cs, cy, separacion)
-    for i in range(pasos + 1):
-        a = 2 * math.pi * i / pasos
-        _punto_cara(cs + ancho * math.cos(a), cy + alto * math.sin(a), separacion)
-    glEnd()
-
-
-def _arco(cs, cy, radio, grosor, desde, hasta, separacion=0.15, pasos=24):
-    """Banda curva entre dos ángulos (grados): sirve para la sonrisa."""
-    glBegin(GL_TRIANGLE_STRIP)
-    for i in range(pasos + 1):
-        a = math.radians(desde + (hasta - desde) * i / pasos)
-        for r in (radio - grosor / 2, radio + grosor / 2):
-            _punto_cara(cs + r * math.cos(a), cy + r * math.sin(a), separacion)
-    glEnd()
+def punto_cara(x, y):
+    z = math.sqrt(RADIO * RADIO - x * x) + 0.15
+    glNormal3f(x / RADIO, 0, z / RADIO)
+    glVertex3f(x, y, z)
 
 
 def dibujar_cara():
-    """Ojos y sonrisa. Se llama con el origen en el centro de la cabeza."""
-    glColor3f(*NEGRO)
-    for lado in (-1, 1):
-        _ovalo(lado * 4.6, 2.2, 1.5, 1.9)                 # ojos
-    _arco(0.0, 1.0, 6.0, 0.9, 215, 325)                   # sonrisa
-    for lado in (-1, 1):                                  # puntas redondeadas
-        a = math.radians(270 + lado * 55)
-        _ovalo(6.0 * math.cos(a), 1.0 + 6.0 * math.sin(a), 0.45, 0.45)
-    glColor3f(*BLANCO)
-    for lado in (-1, 1):
-        _ovalo(lado * 4.6 + 0.5, 2.9, 0.45, 0.55, separacion=0.25)   # brillo
+    glColor3f(0, 0, 0)
+    # ojos
+    for x0 in [-4.6, 4.6]:
+        glBegin(GL_POLYGON)
+        for i in range(20):
+            a = 2 * math.pi * i / 20
+            punto_cara(x0 + 1.5 * math.cos(a), 2.2 + 1.9 * math.sin(a))
+        glEnd()
+    # sonrisa (un pedazo de circulo grueso)
+    glBegin(GL_QUAD_STRIP)
+    for i in range(21):
+        a = math.radians(215 + 110 * i / 20)
+        punto_cara(5.55 * math.cos(a), 1.0 + 5.55 * math.sin(a))
+        punto_cara(6.45 * math.cos(a), 1.0 + 6.45 * math.sin(a))
+    glEnd()
 
 
-def _dibujar_nodo(nombre, articulaciones, dibujar_pieza):
+def dibujar_muneco():
     glPushMatrix()
+    # en SolidWorks Y es arriba, aca Z es arriba, por eso giro 90 en X
+    glRotatef(90, 1, 0, 0)
+    # muevo el muñeco para que quede parado en el piso y centrado
+    glTranslatef(1.16, 74.70, -1011.70)
 
-    # 1) Aplicar las articulaciones de esta pieza (puede tener varias).
-    for art in articulaciones.get(nombre, []):
-        if art.tipo == "tras":
-            # Deslizar: avanzar `valor` mm en la dirección del eje
-            glTranslatef(art.eje[0] * art.valor, art.eje[1] * art.valor, art.eje[2] * art.valor)
-        else:
-            # Girar alrededor del pivote. Truco: llevar el pivote al origen,
-            # girar y devolverlo (como una puerta: gira alrededor de la
-            # bisagra, no de su centro).
-            glTranslatef(*art.pivote)
-            glRotatef(art.valor, *art.eje)
-            glTranslatef(-art.pivote[0], -art.pivote[1], -art.pivote[2])
+    poner_pieza("cadera")
 
-    # 2) Poner la pieza donde estaba en el ensamble y dibujarla
-    p = PIEZAS[nombre]
+    # pierna derecha
     glPushMatrix()
-    glTranslatef(*p.posicion)
-    glRotatef(p.rotacion[0], 1, 0, 0)
-    glRotatef(p.rotacion[1], 0, 1, 0)
-    glRotatef(p.rotacion[2], 0, 0, 1)
-    dibujar_pieza(nombre)
+    girar(5)
+    poner_pieza("pierna_der")
     glPopMatrix()
 
-    # La cara va pegada a la cabeza (se mueve con sus articulaciones). No usa la rotación de la
-    # pieza en el ensamble: así en HOME mira derecho hacia el frente (+Z).
-    if nombre == "cabeza":
-        glPushMatrix()
-        glTranslatef(*p.posicion)
-        dibujar_cara()
-        glPopMatrix()
-
-    # 3) Los hijos heredan el giro de esta pieza
-    for hijo in HIJOS.get(nombre, []):
-        _dibujar_nodo(hijo, articulaciones, dibujar_pieza)
-
+    # pierna izquierda
+    glPushMatrix()
+    girar(6)
+    poner_pieza("pierna_izq")
     glPopMatrix()
 
-
-def dibujar_muneco(articulaciones, dibujar_pieza):
-    """Dibuja el muñeco completo, de pie sobre el piso (eje Z hacia arriba)."""
-    por_pieza = {}                         # pieza -> lista de sus articulaciones
-    for a in articulaciones:
-        por_pieza.setdefault(a.pieza, []).append(a)
+    # torso (todo lo de arriba se mueve con la cintura)
     glPushMatrix()
-    glRotatef(90, 1, 0, 0)                 # SolidWorks usa Y arriba; aquí Z es arriba
-    cx, cy, cz = CENTRO_ENSAMBLE
-    glTranslatef(-cx, -cy, -cz)            # pies en el piso, muñeco centrado
-    _dibujar_nodo(RAIZ, por_pieza, dibujar_pieza)
+    girar(7)
+    poner_pieza("torso")
+
+    # cabeza con la cara, la gorra y la helice
+    glPushMatrix()
+    girar(0)
+    poner_pieza("cabeza")
+    glPushMatrix()
+    pos = piezas["cabeza"][1]
+    glTranslatef(pos[0], pos[1], pos[2])
+    dibujar_cara()
+    glPopMatrix()
+    poner_pieza("gorra")
+    glPushMatrix()
+    girar(8)
+    poner_pieza("helice")
+    glPopMatrix()
+    glPopMatrix()
+
+    # brazo derecho y su mano
+    glPushMatrix()
+    girar(1)
+    poner_pieza("brazo_der")
+    glPushMatrix()
+    girar(3)
+    poner_pieza("mano_der")
+    glPopMatrix()
+    glPopMatrix()
+
+    # brazo izquierdo y su mano
+    glPushMatrix()
+    girar(2)
+    poner_pieza("brazo_izq")
+    glPushMatrix()
+    girar(4)
+    poner_pieza("mano_izq")
+    glPopMatrix()
+    glPopMatrix()
+
+    glPopMatrix()  # fin del torso
     glPopMatrix()
